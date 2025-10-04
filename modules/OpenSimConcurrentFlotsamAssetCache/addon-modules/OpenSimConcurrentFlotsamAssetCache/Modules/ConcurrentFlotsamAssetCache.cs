@@ -458,9 +458,9 @@ namespace OpenSim.Region.CoreModules.Asset
                 wai.asset = null;
                 Thread.Yield();
             }
-            catch
+            catch (Exception e)
             {
-                m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Write worker failed: {ex.Message}");
+                m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Write worker failed: {e.Message}");
             }
         }
 
@@ -876,7 +876,7 @@ namespace OpenSim.Region.CoreModules.Asset
 
             if (m_FileCacheEnabled && Directory.Exists(m_CacheDirectory))
             {
-                foreach (string dir in Directory.GetDirectories(m_CacheDirectory))
+                foreach (string dir in Directory.EnumerateDirectories(m_CacheDirectory))
                 {
                     try { Directory.Delete(dir, true); } catch { }
                 }
@@ -929,7 +929,7 @@ namespace OpenSim.Region.CoreModules.Asset
 
             int cooldown = 0;
             m_log.Info("[CONCURRENT FLOTSAM ASSET CACHE] start asset files expire");
-            foreach (string subdir in Directory.GetDirectories(m_CacheDirectory))
+            foreach (string subdir in Directory.EnumerateDirectories(m_CacheDirectory))
             {
                 if (!m_cleanupRunning)
                     break;
@@ -1365,7 +1365,7 @@ namespace OpenSim.Region.CoreModules.Asset
             if (!Directory.Exists(m_CacheDirectory))
                 return;
 
-            foreach (string dir in Directory.GetDirectories(m_CacheDirectory))
+            foreach (string dir in Directory.EnumerateDirectories(m_CacheDirectory))
             {
                 try { Directory.Delete(dir, true); }
                 catch (Exception e)
