@@ -458,7 +458,10 @@ namespace OpenSim.Region.CoreModules.Asset
                 wai.asset = null;
                 Thread.Yield();
             }
-            catch { }
+            catch
+            {
+                m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Write worker failed: {ex.Message}");
+            }
         }
 
         ////////////////////////////////////////////////////////////
@@ -723,8 +726,24 @@ namespace OpenSim.Region.CoreModules.Asset
                     if (m_MemoryCacheEnabled)
                         UpdateMemoryCache(id, asset);
                 }
+                
+                // optional brief backoff if a write is in progress for this asset
+                // avoids thundering-herd upstream fetches at the cost of a tiny delay
+                string fname = GetFileName(id);
+                if (m_CurrentlyWriting.ContainsKey(fname))
+                {
+                    Thread.Sleep(10);
+                    asset = GetFromFileCache(id);
+                    if (asset is not null)
+                    {
+                        UpdateWeakReference(id, asset);
+                        if (m_MemoryCacheEnabled)
+                            UpdateMemoryCache(id, asset);
+                        return true;
+                    }
+                }
             }
-            return true;
+            return false;
         }
 
         public bool GetFromMemory(string id, out AssetBase asset)
@@ -766,7 +785,7 @@ namespace OpenSim.Region.CoreModules.Asset
                     return true;
                 }
             }
-            return true;
+            return false;
         }
 
         public bool Check(string id)
@@ -1041,6 +1060,11 @@ namespace OpenSim.Region.CoreModules.Asset
         /// <returns></returns>
         private string GetFileName(string id)
         {
+            // guard for too-short ids when tiering is applied
+            // UUIDs are long enough, but protect against custom IDs
+            if (string.IsNullOrEmpty(id))
+                return m_CacheDirectory;
+            
             int indx = id.IndexOfAny(m_InvalidChars);
             string safeId = id;
             if (indx >= 0)
@@ -1051,6 +1075,13 @@ namespace OpenSim.Region.CoreModules.Asset
                 for (int i = 0; i < m_InvalidChars.Length; ++i)
                     sb.Replace(m_InvalidChars[i], '_', indx, sublen);
                 safeId = osStringBuilderCache.GetStringAndRelease(sb);
+            }
+            
+            int minLen = Math.Max(m_CacheDirectoryTierLen, m_CacheDirectoryTiers * m_CacheDirectoryTierLen);
+            if (safeId.Length < minLen)
+            {
+                // pad to avoid substring errors
+                safeId = safeId.PadRight(minLen, '_');
             }
 
             StringBuilder pathSb = osStringBuilderCache.Acquire();
@@ -1112,6 +1143,8 @@ namespace OpenSim.Region.CoreModules.Asset
                 }
                 catch (UnauthorizedAccessException)
                 {
+                    m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Unauthorized writing asset {asset.ID} to {directory}: {e.Message}");
+                    return;
                 }
 
                 try
@@ -1126,6 +1159,7 @@ namespace OpenSim.Region.CoreModules.Asset
                     // If we see an IOException here it's likely that some other competing thread has written the
                     // cache file first, so ignore.  Other IOException errors (e.g. filesystem full) should be
                     // signally by the earlier temporary file writing code.
+                    m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Failed to finalize write for {asset.ID} to {filename}: {e.Message}");
                 }
             }
             finally
@@ -1450,7 +1484,7 @@ namespace OpenSim.Region.CoreModules.Asset
                     case "clear":
                         if (cmdparams.Length < 2)
                         {
-                            con.Output("Usage is fcache clear [file] [memory]");
+                            con.Output("Usage is cfcache clear [file] [memory]");
                             break;
                         }
 
@@ -1503,10 +1537,10 @@ namespace OpenSim.Region.CoreModules.Asset
                         {
                             int nsz = m_negativeCache.Count;
                             m_negativeCache.Clear();
-                            con.Output($"Flotsam cache of negatives cleared ({nsz} entries)");
+                            con.Output($"Concurrent Flotsam cache of negatives cleared ({nsz} entries)");
                         }
                         else
-                            con.Output("Flotsam cache of negatives not enabled");
+                            con.Output("Concurrent Flotsam cache of negatives not enabled");
                         break;
 
                     case "assets":
@@ -1514,13 +1548,13 @@ namespace OpenSim.Region.CoreModules.Asset
                         {
                             if (m_cleanupRunning)
                             {
-                                con.Output("Flotsam assets check already running");
+                                con.Output("Concurrent Flotsam assets check already running");
                                 return;
                             }
                             m_cleanupRunning = true;
                         }
 
-                        con.Output("Flotsam Ensuring assets are cached for all scenes.");
+                        con.Output("Concurrent Flotsam Ensuring assets are cached for all scenes.");
 
                         WorkManager.RunInThreadPool(delegate
                         {
@@ -1559,7 +1593,7 @@ namespace OpenSim.Region.CoreModules.Asset
                         {
                             if (m_cleanupRunning)
                             {
-                                con.Output("Flotsam assets check already running");
+                                con.Output("Concurrent Flotsam assets check already running");
                                 return;
                             }
                             m_cleanupRunning = true;
@@ -1645,12 +1679,12 @@ namespace OpenSim.Region.CoreModules.Asset
             }
             else if (cmdparams.Length == 1)
             {
-                con.Output("fcache assets - Attempt a deep cache of all assets in all scenes");
-                con.Output("fcache expire <datetime> - Purge assets older than the specified date & time");
-                con.Output("fcache clear [file] [memory] - Remove cached assets");
-                con.Output("fcache status - Display cache status");
-                con.Output("fcache cachedefaultassets - loads default assets to cache replacing existent ones, this may override grid assets. Use with care");
-                con.Output("fcache deletedefaultassets - deletes default local assets from cache so they can be refreshed from grid");
+                con.Output("cfcache assets - Attempt a deep cache of all assets in all scenes");
+                con.Output("cfcache expire <datetime> - Purge assets older than the specified date & time");
+                con.Output("cfcache clear [file] [memory] - Remove cached assets");
+                con.Output("cfcache status - Display cache status");
+                con.Output("cfcache cachedefaultassets - loads default assets to cache replacing existent ones, this may override grid assets. Use with care");
+                con.Output("cfcache deletedefaultassets - deletes default local assets from cache so they can be refreshed from grid");
             }
         }
 
