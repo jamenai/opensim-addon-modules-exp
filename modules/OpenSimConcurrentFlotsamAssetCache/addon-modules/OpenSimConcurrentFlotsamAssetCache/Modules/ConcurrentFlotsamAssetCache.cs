@@ -1428,16 +1428,44 @@ namespace OpenSim.Region.CoreModules.Asset
             double invReq = 100.0 / Math.Max(1UL, m_Requests);
 
             double weakHitRate = m_weakRefHits * invReq;
-            int weakEntriesAlive = 0;
-            foreach (WeakReference aref in weakAssetReferences.Values)
-                if (aref.IsAlive) ++weakEntriesAlive;
+
+            // Sample-based alive counting to reduce CPU cost on large maps
             int weakEntries = weakAssetReferences.Count;
+            int weakEntriesAliveSampled = 0;
+            int sampled = 0;
+
+            const int sampleTarget = 2000; // sample up to this many entries
+            int sampleStep = 1;
+
+            if (weakEntries > sampleTarget && sampleTarget > 0)
+            {
+                // stride to visit ~sampleTarget entries
+                sampleStep = Math.Max(1, weakEntries / sampleTarget);
+            }
+
+            int index = 0;
+            foreach (var kv in weakAssetReferences)
+            {
+                if ((index++ % sampleStep) != 0)
+                    continue;
+
+                if (kv.Value.TryGetTarget(out _))
+                    weakEntriesAliveSampled++;
+
+                sampled++;
+                if (sampled >= sampleTarget)
+                    break; // cap the work even if map grows while iterating
+            }
+
+            int weakEntriesAlive = weakEntries == 0 || sampled == 0
+                ? 0
+                : (int)Math.Round((double)weakEntriesAliveSampled / sampled * weakEntries);
 
             double fileHitRate = m_DiskHits * invReq;
             double TotalHitRate = weakHitRate + fileHitRate;
 
             outputLines.Add($"Total requests: {m_Requests}");
-            outputLines.Add($"unCollected Hit Rate: {weakHitRate:0.00}% ({weakEntries} entries {weakEntriesAlive} alive)");
+            outputLines.Add($"unCollected Hit Rate: {weakHitRate:0.00}% ({weakEntries} entries ~{weakEntriesAlive} alive [sampled {sampled}])");
             outputLines.Add($"File Hit Rate: {fileHitRate:0.00}%");
 
             if (m_MemoryCacheEnabled)
