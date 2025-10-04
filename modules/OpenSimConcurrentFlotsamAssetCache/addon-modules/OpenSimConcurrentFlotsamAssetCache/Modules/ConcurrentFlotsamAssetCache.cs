@@ -1888,13 +1888,14 @@ namespace OpenSim.Region.CoreModules.Asset
 
                                 foreach (string s in Directory.GetFiles(m_CacheDirectory, "*.fac"))
                                 {
-                                    int start = s.IndexOf('_');
-                                    int end = s.IndexOf('.');
-                                    if (start > 0 && end > 0)
+                                    string fn = Path.GetFileName(s);
+                                    int start = fn.IndexOf('_');
+                                    int end = fn.IndexOf('.');
+                                    if (start > 0 && end > start)
                                     {
-                                        string RegionID = s.Substring(start + 1, end - start - 1);
-                                        DateTime RegionDeepScanTMStamp = File.GetLastWriteTime(s);
-                                        con.Output("[CONCURRENT FLOTSAM ASSET CACHE] Region: {0}, {1}", RegionID, RegionDeepScanTMStamp.ToString("MM/dd/yyyy hh:mm:ss"));
+                                        string RegionID = fn.Substring(start + 1, end - start - 1);
+                                        DateTime ts = File.GetLastWriteTime(s);
+                                        con.Output("[CONCURRENT FLOTSAM ASSET CACHE] Region: {0}, {1}", RegionID, ts.ToString("MM/dd/yyyy hh:mm:ss"));
                                     }
                                 }
                             }
