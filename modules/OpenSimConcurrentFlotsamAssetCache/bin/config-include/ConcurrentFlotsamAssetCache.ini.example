@@ -113,3 +113,7 @@
     ; Maximum backoff delay per attempt in milliseconds (cap).
     ; Default: 40  [>= BackoffInitialMs, <= 2000]
     BackoffMaxMs = 40
+    
+    ; File writer concurrency (number of threads).
+    ; Default: 1 (recommended) Max: 4 (can be dangerous for the disk) 
+    FileWriterConcurrencyWorker = 1

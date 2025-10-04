@@ -266,7 +266,10 @@ namespace OpenSim.Region.CoreModules.Asset
         
         // .bak cleanup options
         private bool m_EnableBakCleanup = true;
-        private TimeSpan m_BakMaxAge = TimeSpan.FromHours(24);        
+        private TimeSpan m_BakMaxAge = TimeSpan.FromHours(24); 
+        
+        // fileWriter concurrency options
+        private int m_FileWriterConcurrencyWorker = 1; // number of workers to use for concurrent writes (default: 1, max: 4)
         
         public ConcurrentFlotsamAssetCache()
         {
@@ -375,6 +378,12 @@ namespace OpenSim.Region.CoreModules.Asset
                 if (bakMaxAgeHours < 1.0) bakMaxAgeHours = 1.0; // floor
                 if (bakMaxAgeHours > 168.0) bakMaxAgeHours = 168.0; // cap at 7 days
                 m_BakMaxAge = TimeSpan.FromHours(bakMaxAgeHours);
+                
+                // fileWriter concurrency config (optional)
+                // WARNING: this is a very experimental option and can damage the disk if used incorrectly
+                m_FileWriterConcurrencyWorker = assetConfig.GetInt("FileWriterConcurrencyWorker", m_FileWriterConcurrencyWorker);
+                if (m_FileWriterConcurrencyWorker > 4) m_FileWriterConcurrencyWorker = 4; // keep it limited to max: 4     
+                
             }
 
             if (m_updateFileTimeOnCacheHit)
@@ -503,7 +512,7 @@ namespace OpenSim.Region.CoreModules.Asset
 
                 if (m_FileCacheEnabled && m_assetFileWriteWorker == null)
                 {
-                    m_assetFileWriteWorker = new ObjectJobEngine(ProcessWrites, "ConcurrentFloatsamCacheWriter", 1000, 1);
+                    m_assetFileWriteWorker = new ObjectJobEngine(ProcessWrites, "ConcurrentFlotsamCacheWriter", 1000, m_FileWriterConcurrencyWorker);
                 }
 
                 if (!string.IsNullOrWhiteSpace(m_assetLoader) && scene.RegionInfo.RegionID == m_Scenes[0].RegionInfo.RegionID)
@@ -770,6 +779,7 @@ namespace OpenSim.Region.CoreModules.Asset
 
         public AssetBase Get(string id, string ForeignAssetService, bool dummy) => null;
 
+        // @todo: in-flight de-duplication (sync or async?? keep mono comp. = sync??
         public bool Get(string id, out AssetBase asset)
         {
             asset = null;
@@ -835,6 +845,8 @@ namespace OpenSim.Region.CoreModules.Asset
                     delay = Math.Min(delay == 0 ? 1 : delay * 2, m_BackoffMaxMs);
                 }
             }
+            // @todo: should we also check the asset service (upstream)? (AssetProxy support too? or AssetCache only ??)
+            // without upstream we produce may be silent misses...
             return false;
         }
 
