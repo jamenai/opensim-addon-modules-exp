@@ -243,6 +243,7 @@ namespace OpenSim.Region.CoreModules.Asset
         private readonly object timerLock = new();
         
         private ConcurrentDictionary<string, WeakReference<AssetBase>> weakAssetReferences = new();
+        private readonly ConcurrentDictionary<string, Lazy<AssetBase>> m_inflightFetches = new();
         
         private static bool m_updateFileTimeOnCacheHit = false;
 
@@ -769,7 +770,100 @@ namespace OpenSim.Region.CoreModules.Asset
             }
             return false;
         }
+        
+        private AssetBase FetchUpstream(string id)
+        {
+            return m_AssetService is null ? null : m_AssetService.Get(id);
+        }
+        
+        // In-flight de-duplication + upstream fetch integration
+        private bool TryGetWithUpstream(string id, out AssetBase asset)
+        {
+            asset = null;
 
+            // 1) Fast paths: weak + memory + file
+            asset = GetFromWeakReference(id);
+            if (asset is not null)
+            {
+                if (m_MemoryCacheEnabled) UpdateMemoryCache(id, asset);
+                return true;
+            }
+
+            if (m_MemoryCacheEnabled)
+            {
+                asset = GetFromMemoryCache(id);
+                if (asset is not null)
+                {
+                    UpdateWeakReference(id, asset);
+                    return true;
+                }
+            }
+
+            if (m_FileCacheEnabled)
+            {
+                // small wait if a write is in-flight for this file to avoid unnecessary upstream fetch
+                string fname = GetFileName(id);
+                if (fname != null && m_CurrentlyWriting.ContainsKey(fname))
+                {
+                    int delay = Math.Min(10, m_BackoffInitialMs > 0 ? m_BackoffInitialMs : 5);
+                    if (delay > 0)
+                        Thread.Sleep(delay);
+                }
+                
+                asset = GetFromFileCache(id);
+                if (asset is not null)
+                {
+                    UpdateWeakReference(id, asset);
+                    if (m_MemoryCacheEnabled) UpdateMemoryCache(id, asset);
+                    return true;
+                }
+            }
+
+            // 2) Negative cache check before upstream
+            if (IsNegative(id))
+                return false;
+
+            // 3) In-flight de-duplication for upstream fetch
+            try
+            {
+                var lazyFetch = m_inflightFetches.GetOrAdd(
+                    id,
+                    _ => new Lazy<AssetBase>(() => FetchUpstream(id), LazyThreadSafetyMode.ExecutionAndPublication)
+                );
+
+                asset = lazyFetch.Value; // triggers single actual fetch; others await the result
+
+                if (asset is null)
+                {
+                    // upstream miss -> record negative (bounded)
+                    CacheNegative(id);
+                    return false;
+                }
+
+                // Success: populate caches
+                UpdateWeakReference(id, asset);
+                if (m_MemoryCacheEnabled) UpdateMemoryCache(id, asset);
+                if (m_FileCacheEnabled) UpdateFileCache(id, asset, replace: false);
+
+                // Ensure negatives do not hide this id
+                if (m_negativeCacheEnabled) m_negativeCache.TryRemove(id, out _);
+
+                return true;
+            }
+            catch
+            {
+                // On error, mark as negative (short TTL) to avoid stampede
+                CacheNegative(id);
+                return false;
+            }
+            finally
+            {
+                // Remove in-flight entry so future requests can refetch if needed
+                m_inflightFetches.TryRemove(id, out _);
+            }
+        }
+        
+        
         // For IAssetService
         public AssetBase Get(string id)
         {
@@ -779,7 +873,26 @@ namespace OpenSim.Region.CoreModules.Asset
 
         public AssetBase Get(string id, string ForeignAssetService, bool dummy) => null;
 
+        public bool Get(string id, out AssetBase asset)
+        {
+            asset = null;
+
+            m_Requests++;
+            if (string.IsNullOrWhiteSpace(id) || id.Equals(UUID.ZeroString))
+                return false;
+
+            // Try local caches + file + upstream with in-flight de-duplication
+            bool ok = TryGetWithUpstream(id, out asset);
+            if (ok && m_updateFileTimeOnCacheHit)
+            {
+                var fn = GetFileName(id);
+                if (fn != null) UpdateFileLastAccessTime(fn);
+            }
+            return ok;
+        }
+        
         // @todo: in-flight de-duplication (sync or async?? keep mono comp. = sync??
+        /*
         public bool Get(string id, out AssetBase asset)
         {
             asset = null;
@@ -849,6 +962,7 @@ namespace OpenSim.Region.CoreModules.Asset
             // without upstream we produce may be silent misses...
             return false;
         }
+        */
 
         public bool GetFromMemory(string id, out AssetBase asset)
         {
