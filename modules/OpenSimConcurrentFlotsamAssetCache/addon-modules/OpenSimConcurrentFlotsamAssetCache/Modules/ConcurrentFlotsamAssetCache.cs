@@ -783,7 +783,7 @@ namespace OpenSim.Region.CoreModules.Asset
             return m_AssetService.Get(id);
         }
         
-        private ulong m_InFlightJoins;
+        private long m_InFlightJoins;
         
         // In-flight de-duplication + upstream fetch integration
         private bool TryGetWithUpstream(string id, out AssetBase asset)
@@ -1892,7 +1892,7 @@ namespace OpenSim.Region.CoreModules.Asset
                                     int end = s.IndexOf('.');
                                     if (start > 0 && end > 0)
                                     {
-                                        string RegionID = s.Substring(start + 1, end - start);
+                                        string RegionID = s.Substring(start + 1, end - start - 1);
                                         DateTime RegionDeepScanTMStamp = File.GetLastWriteTime(s);
                                         con.Output("[CONCURRENT FLOTSAM ASSET CACHE] Region: {0}, {1}", RegionID, RegionDeepScanTMStamp.ToString("MM/dd/yyyy hh:mm:ss"));
                                     }
