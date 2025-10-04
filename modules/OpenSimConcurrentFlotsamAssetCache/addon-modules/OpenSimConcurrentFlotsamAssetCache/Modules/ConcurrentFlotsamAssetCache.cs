@@ -249,6 +249,9 @@ namespace OpenSim.Region.CoreModules.Asset
         private static bool m_updateFileTimeOnCacheHit = false;
 
         private static ExpiringKey<string> m_lastFileAccessTimeChange = null;
+        
+        private static bool m_enableReplaceBackup = false;   // optionally keep a backup on atomic replace
+        private static bool m_enableMoveOverwrite = true;    // prefer overwrite move when available
 
         public ConcurrentFlotsamAssetCache()
         {
@@ -311,6 +314,10 @@ namespace OpenSim.Region.CoreModules.Asset
                 m_CacheDirectoryTierLen = assetConfig.GetInt("CacheDirectoryTierLength", m_CacheDirectoryTierLen);
 
                 m_CacheWarnAt = assetConfig.GetInt("CacheWarnAt", m_CacheWarnAt);
+                
+                // Optional controls for safer replace behavior
+                m_enableReplaceBackup = assetConfig.GetBoolean("FileReplaceKeepBackup", m_enableReplaceBackup);
+                m_enableMoveOverwrite = assetConfig.GetBoolean("FileMoveAllowOverwrite", m_enableMoveOverwrite);
             }
 
             if (m_updateFileTimeOnCacheHit)
@@ -1171,29 +1178,50 @@ namespace OpenSim.Region.CoreModules.Asset
 
                 try
                 {
-                    // Prefer atomic replacement when supported (Windows/NTFS).
-                    // If File.Replace throws (e.g., not supported), fallback to Move strategy.
+                    // 1) Try atomic replace with optional backup (Windows/NTFS)
                     if (replace && File.Exists(filename))
                     {
-                        string? backup = null; // no backup to minimize IO; could be set to a temp path if desired
+                        string backupPath = null;
+                        if (m_enableReplaceBackup)
+                        {
+                            // keep a backup alongside the file to minimize cross-device issues
+                            backupPath = filename + ".bak";
+                            try { if (File.Exists(backupPath)) File.Delete(backupPath); } catch { }
+                        }
+
                         try
                         {
-                            File.Replace(tempname, filename, backup, ignoreMetadataErrors: true);
+                            File.Replace(tempname, filename, backupPath, ignoreMetadataErrors: true);
+                            // on success, consider cleaning backup (optional)
+                            if (backupPath != null)
+                            {
+                                try { File.Delete(backupPath); } catch { }
+                            }
+                            return;
                         }
                         catch
                         {
-                            // Fallback to delete+move if Replace is not available/supported
-                            try { File.Delete(filename); } catch { }
-                            File.Move(tempname, filename);
+                            // fall through to move-based strategies
                         }
                     }
-                    else
+
+                    // 2) Prefer move with overwrite when available (Framework >= .NET Core)
+                    // If not replacing, this also serves as the default move
+#if NET6_0_OR_GREATER
+                    if (m_enableMoveOverwrite)
                     {
-                        // No prior file or not replacing -> simple move
-                        File.Move(tempname, filename);
+                        File.Move(tempname, filename, overwrite: replace);
+                        return;
                     }
+#endif
+                    // 3) Legacy fallback: delete + move (small window)
+                    if (replace && File.Exists(filename))
+                    {
+                        try { File.Delete(filename); } catch { }
+                    }
+                    File.Move(tempname, filename);
                 }
-                catch
+                catch (Exception e)
                 {
                     try { File.Delete(tempname); } catch { }
                     m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Failed to finalize write for {asset.ID} to {filename}: {e.Message}");
@@ -1201,7 +1229,6 @@ namespace OpenSim.Region.CoreModules.Asset
             }
             finally
             {
-                // cached
                 m_CurrentlyWriting.TryRemove(filename, out _);
             }
         }
@@ -1434,6 +1461,7 @@ namespace OpenSim.Region.CoreModules.Asset
             int weakEntriesAliveSampled = 0;
             int sampled = 0;
 
+            // @todo: add to config
             const int sampleTarget = 2000; // sample up to this many entries
             int sampleStep = 1;
 
