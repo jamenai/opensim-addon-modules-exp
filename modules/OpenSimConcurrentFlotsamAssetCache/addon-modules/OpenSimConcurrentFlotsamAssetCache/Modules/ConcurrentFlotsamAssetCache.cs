@@ -384,6 +384,8 @@ namespace OpenSim.Region.CoreModules.Asset
                 // WARNING: this is a very experimental option and can damage the disk if used incorrectly
                 m_FileWriterConcurrencyWorker = assetConfig.GetInt("FileWriterConcurrencyWorker", m_FileWriterConcurrencyWorker);
                 if (m_FileWriterConcurrencyWorker > 4) m_FileWriterConcurrencyWorker = 4; // keep it limited to max: 4     
+                if (m_FileWriterConcurrencyWorker > 1)
+                    m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: FileWriterConcurrencyWorker={m_FileWriterConcurrencyWorker} – ensure your storage can handle parallel writes.");
                 
             }
 
@@ -773,6 +775,9 @@ namespace OpenSim.Region.CoreModules.Asset
         
         private AssetBase FetchUpstream(string id)
         {
+            // guard for self calling
+            if (m_AssetService == null || ReferenceEquals(m_AssetService, this))
+                return null;
             return m_AssetService is null ? null : m_AssetService.Get(id);
         }
         
@@ -826,6 +831,10 @@ namespace OpenSim.Region.CoreModules.Asset
             // 3) In-flight de-duplication for upstream fetch
             try
             {
+                // guard for self calling
+                if (m_AssetService == null || ReferenceEquals(m_AssetService, this))
+                    return false; 
+                
                 var lazyFetch = m_inflightFetches.GetOrAdd(
                     id,
                     _ => new Lazy<AssetBase>(() => FetchUpstream(id), LazyThreadSafetyMode.ExecutionAndPublication)
@@ -850,10 +859,12 @@ namespace OpenSim.Region.CoreModules.Asset
 
                 return true;
             }
-            catch
+            catch (Exception e)
             {
-                // On error, mark as negative (short TTL) to avoid stampede
-                CacheNegative(id);
+                if (m_LogLevel >= 1)
+                    m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Upstream error for {id}: {e.Message}");
+                // On error, mark as negative (short TTL) to avoid stampede??
+                //CacheNegative(id);
                 return false;
             }
             finally
@@ -969,8 +980,8 @@ namespace OpenSim.Region.CoreModules.Asset
             asset = null;
 
             m_Requests++;
-
-            if (string.IsNullOrWhiteSpace(id) || id.Equals(Util.UUIDZeroString))
+            
+            if (string.IsNullOrWhiteSpace(id) || id.Equals(UUID.ZeroString))
                 return false;
 
             if (IsNegative(id))
@@ -1023,7 +1034,7 @@ namespace OpenSim.Region.CoreModules.Asset
         // does not check negative cache
         public AssetBase GetCached(string id)
         {
-            m_Requests++;
+            //m_Requests++;
 
             AssetBase asset = GetFromWeakReference(id);
             if (asset is not null)
