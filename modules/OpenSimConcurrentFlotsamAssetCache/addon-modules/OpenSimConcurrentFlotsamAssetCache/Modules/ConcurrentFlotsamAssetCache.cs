@@ -117,7 +117,7 @@ namespace OpenSim.Region.CoreModules.Asset
             bw.Flush();
         }
 
-        private static AssetBase DeserializeAsset(Stream stream)
+        private static AssetBase DeserializeAsset(Stream stream, int maxStringLenBytes, int maxDataLenBytes)
         {
             using var br = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
 
@@ -127,12 +127,6 @@ namespace OpenSim.Region.CoreModules.Asset
             int version = br.ReadInt32();
             if (version != AssetFileVersion)
                 throw new System.Runtime.Serialization.SerializationException("Unsupported cache version");
-            
-            // limits to protect against corrupted files/DoS
-            // @todo: consider moving these to a config file
-            const int MaxStringLen = 1 * 1024 * 1024;   // 1 MB per string
-            const int MaxDataLenMB = 256;               // 256 MB asset data
-            const int MaxDataLen = MaxDataLenMB * 1024 * 1024;            
 
             static string ReadStringCapped(BinaryReader r, int cap)
             {
@@ -152,14 +146,14 @@ namespace OpenSim.Region.CoreModules.Asset
                 }
             }
 
-            string id = ReadStringCapped(br, MaxStringLen);
-            string name = ReadStringCapped(br, MaxStringLen);
-            string desc = ReadStringCapped(br, MaxStringLen);
+            string id = ReadStringCapped(br, maxStringLenBytes);
+            string name = ReadStringCapped(br, maxStringLenBytes);
+            string desc = ReadStringCapped(br, maxStringLenBytes);
             sbyte type = br.ReadSByte();
             uint flags = br.ReadUInt32();
 
             int dataLen = br.ReadInt32();
-            if (dataLen < 0 || dataLen > MaxDataLen)
+            if (dataLen < 0 || dataLen > maxDataLenBytes)
                 throw new System.Runtime.Serialization.SerializationException("Asset data too large or invalid");
 
             byte[] data = dataLen > 0 ? new byte[dataLen] : Array.Empty<byte>();
@@ -206,7 +200,6 @@ namespace OpenSim.Region.CoreModules.Asset
         private readonly char[] m_InvalidChars;
 
         private int m_LogLevel = 0;
-        private ulong m_HitRateDisplay = 100; // How often to display hit statistics, given in requests
 
         private ulong m_Requests;
         private ulong m_RequestsForInprogress;
@@ -226,7 +219,12 @@ namespace OpenSim.Region.CoreModules.Asset
         // new negative cache is a dictionary of asset ids to the time they were last accessed
         private ConcurrentDictionary<string, long> m_negativeCache;
         private bool m_negativeCacheEnabled = true;
-
+        
+        // Negative cache (miss cache) with optional size limit and pruning
+        // (keep only sizing/pruning fields here; DO NOT redeclare m_negativeCache or m_negativeCacheEnabled)
+        private static int m_negativeCacheMaxEntries = 100_000; // configurable cap
+        private static int m_negativeCachePruneBatch = 5_000;   // how many to remove when pruning   
+        
         // Expiration is expressed in hours for memory cache; negative cache in seconds
         private double m_MemoryExpiration = 0.016;
         private const double m_DefaultFileExpiration = 48;
@@ -252,7 +250,24 @@ namespace OpenSim.Region.CoreModules.Asset
         
         private static bool m_enableReplaceBackup = false;   // optionally keep a backup on atomic replace
         private static bool m_enableMoveOverwrite = true;    // prefer overwrite move when available
+        
+        private ulong m_HitRateDisplay = 100; // How often to display hit statistics, given in requests
+        private int m_HitReportWeakRefSampleTarget = 2000; // configurable sample size for weak refs
+        
+        // Configurable deserialization caps (defaults conservative)
+        private int m_MaxStringLenBytes = 256 * 1024;   // 256 KB per string
+        private int m_MaxDataLenMB = 64;               // 64 MB asset data
+        private int m_MaxDataLenBytes => m_MaxDataLenMB * 1024 * 1024;
 
+        // Configurable backoff for concurrent write contention
+        private int m_BackoffAttempts = 3;     // number of retries
+        private int m_BackoffInitialMs = 5;    // initial delay in ms
+        private int m_BackoffMaxMs = 40;       // max delay cap in ms
+        
+        // .bak cleanup options
+        private bool m_EnableBakCleanup = true;
+        private TimeSpan m_BakMaxAge = TimeSpan.FromHours(24);        
+        
         public ConcurrentFlotsamAssetCache()
         {
             List<char> invalidChars = new();
@@ -304,7 +319,6 @@ namespace OpenSim.Region.CoreModules.Asset
                 m_updateFileTimeOnCacheHit &= m_FileCacheEnabled;
 
                 m_LogLevel = assetConfig.GetInt("LogLevel", m_LogLevel);
-                m_HitRateDisplay = (ulong)assetConfig.GetLong("HitRateDisplay", (long)m_HitRateDisplay);
 
                 m_FileExpiration = TimeSpan.FromHours(assetConfig.GetDouble("FileCacheTimeout", m_DefaultFileExpiration));
                 m_FileExpirationCleanupTimer = TimeSpan.FromHours(
@@ -318,6 +332,49 @@ namespace OpenSim.Region.CoreModules.Asset
                 // Optional controls for safer replace behavior
                 m_enableReplaceBackup = assetConfig.GetBoolean("FileReplaceKeepBackup", m_enableReplaceBackup);
                 m_enableMoveOverwrite = assetConfig.GetBoolean("FileMoveAllowOverwrite", m_enableMoveOverwrite);
+                
+                // Negative cache sizing (optional)
+                m_negativeCacheMaxEntries = assetConfig.GetInt("NegativeCacheMaxEntries", m_negativeCacheMaxEntries);
+                m_negativeCachePruneBatch = assetConfig.GetInt("NegativeCachePruneBatch", m_negativeCachePruneBatch);
+                if (m_negativeCacheMaxEntries < 1000) m_negativeCacheMaxEntries = 1000;
+                if (m_negativeCachePruneBatch < 100) m_negativeCachePruneBatch = 100;
+                
+                m_HitRateDisplay = (ulong)assetConfig.GetLong("HitRateDisplay", (long)m_HitRateDisplay);
+                m_HitReportWeakRefSampleTarget = assetConfig.GetInt("HitReportWeakRefSampleTarget", m_HitReportWeakRefSampleTarget);
+                if (m_HitReportWeakRefSampleTarget < 100)
+                    m_HitReportWeakRefSampleTarget = 100; // lower bound to avoid excessive iteration
+                
+                // Deserialization limits (optional)
+                m_MaxStringLenBytes = assetConfig.GetInt("DeserializeMaxStringLenBytes", m_MaxStringLenBytes);
+                m_MaxDataLenMB = assetConfig.GetInt("DeserializeMaxDataLenMB", m_MaxDataLenMB);
+                
+                // floors (avoid too small values that break normal assets)
+                if (m_MaxStringLenBytes < 32 * 1024) m_MaxStringLenBytes = 32 * 1024; // 32 KB
+                if (m_MaxDataLenMB < 8) m_MaxDataLenMB = 8; // 8 MB
+                
+                // ceilings (protect from misconfiguration)
+                if (m_MaxStringLenBytes > 2 * 1024 * 1024) m_MaxStringLenBytes = 2 * 1024 * 1024; // 2 MB
+                if (m_MaxDataLenMB > 512) m_MaxDataLenMB = 512; // 512 MB
+
+                // Backoff tuning (optional)
+                m_BackoffAttempts = assetConfig.GetInt("BackoffAttempts", m_BackoffAttempts);
+                m_BackoffInitialMs = assetConfig.GetInt("BackoffInitialMs", m_BackoffInitialMs);
+                m_BackoffMaxMs = assetConfig.GetInt("BackoffMaxMs", m_BackoffMaxMs);
+                
+                // sanitize backoff
+                if (m_BackoffAttempts < 0) m_BackoffAttempts = 0;
+                if (m_BackoffAttempts > 10) m_BackoffAttempts = 10; // hard upper bound
+                if (m_BackoffInitialMs < 0) m_BackoffInitialMs = 0;
+                if (m_BackoffInitialMs > 500) m_BackoffInitialMs = 500;
+                if (m_BackoffMaxMs < m_BackoffInitialMs) m_BackoffMaxMs = m_BackoffInitialMs;
+                if (m_BackoffMaxMs > 2000) m_BackoffMaxMs = 2000;
+                
+                // .bak cleanup config (optional)
+                m_EnableBakCleanup = assetConfig.GetBoolean("BakCleanupEnabled", m_EnableBakCleanup);
+                double bakMaxAgeHours = assetConfig.GetDouble("BakCleanupMaxAgeHours", m_BakMaxAge.TotalHours);
+                if (bakMaxAgeHours < 1.0) bakMaxAgeHours = 1.0; // floor
+                if (bakMaxAgeHours > 168.0) bakMaxAgeHours = 168.0; // cap at 7 days
+                m_BakMaxAge = TimeSpan.FromHours(bakMaxAgeHours);
             }
 
             if (m_updateFileTimeOnCacheHit)
@@ -359,6 +416,7 @@ namespace OpenSim.Region.CoreModules.Asset
                 MainConsole.Instance.Commands.AddCommand("Assets", true, "cfcache cachedefaultassets", "cfcache cachedefaultassets", "loads local default assets to cache. This may override grid ones. use with care", HandleConsoleCommand);
                 MainConsole.Instance.Commands.AddCommand("Assets", true, "cfcache deletedefaultassets", "cfcache deletedefaultassets", "deletes default local assets from cache so they can be refreshed from grid. use with care", HandleConsoleCommand);
             }
+            MainConsole.Instance.Commands.AddCommand("Assets", true, "cfcache cleanbak", "cfcache cleanbak", "Clean stale .bak files from cache now", HandleConsoleCommand);
         }
 
         public void PostInitialise() { }
@@ -553,7 +611,11 @@ namespace OpenSim.Region.CoreModules.Asset
         {
             if (!m_negativeCacheEnabled || string.IsNullOrEmpty(id))
                 return;
-            long ttlMs = (long)m_negativeExpiration; // already in ms
+
+            // opportunistic prune on insert if over capacity
+            TryPruneNegativeCacheIfNeeded();
+
+            long ttlMs = (long)m_negativeExpiration; // ms
             long expiresAt = Environment.TickCount64 + ttlMs;
             m_negativeCache[id] = expiresAt;
         }
@@ -649,7 +711,7 @@ namespace OpenSim.Region.CoreModules.Asset
                 if (stream.Length == 0) // Empty file will trigger exception below
                     return null;
 
-                asset = DeserializeAsset(stream);
+                asset = DeserializeAsset(stream, m_MaxStringLenBytes, m_MaxDataLenBytes);
                 m_DiskHits++;
             }
             catch (FileNotFoundException) { }
@@ -746,8 +808,9 @@ namespace OpenSim.Region.CoreModules.Asset
 
             if (m_FileCacheEnabled)
             {
-                // small exponential backoff if a write is in progress
-                for (int delay = 5, attempts = 0; attempts < 3; attempts++, delay *= 2)
+                // Configurable exponential backoff if a write is in progress
+                int delay = m_BackoffInitialMs;
+                for (int attempts = 0; attempts < m_BackoffAttempts; attempts++)
                 {
                     asset = GetFromFileCache(id);
                     if (asset is not null)
@@ -762,7 +825,10 @@ namespace OpenSim.Region.CoreModules.Asset
                     if (fname is null || !m_CurrentlyWriting.ContainsKey(fname))
                         break;
 
-                    Thread.Sleep(delay);
+                    if (delay > 0)
+                        Thread.Sleep(Math.Min(delay, m_BackoffMaxMs));
+                    // exponential growth with cap
+                    delay = Math.Min(delay == 0 ? 1 : delay * 2, m_BackoffMaxMs);
                 }
             }
             return false;
@@ -947,6 +1013,8 @@ namespace OpenSim.Region.CoreModules.Asset
                         if (kv.Value < now)
                             m_negativeCache.TryRemove(kv.Key, out _);
                     }
+                    // also prune if size is above cap (periodic cleanup)
+                    TryPruneNegativeCacheIfNeeded();
                 }
 
                 Dictionary<UUID, sbyte> gids = GatherSceneAssets();
@@ -985,6 +1053,60 @@ namespace OpenSim.Region.CoreModules.Asset
                 }
             }
         }
+        
+        private void TryPruneNegativeCacheIfNeeded()
+        {
+            if (!m_negativeCacheEnabled)
+                return;
+
+            int count = m_negativeCache.Count;
+            if (count <= m_negativeCacheMaxEntries)
+                return;
+
+            long now = Environment.TickCount64;
+
+            // 1) remove expired entries opportunistically
+            int removed = 0;
+            foreach (var kv in m_negativeCache)
+            {
+                if (kv.Value < now)
+                {
+                    if (m_negativeCache.TryRemove(kv.Key, out _))
+                    {
+                        if (++removed >= m_negativeCachePruneBatch)
+                            break;
+                    }
+                }
+            }
+
+            // 2) if still over capacity, remove oldest entries
+            if (m_negativeCache.Count > m_negativeCacheMaxEntries)
+            {
+                // sample up to N entries to avoid full sort when map is huge
+                const int sampleTarget = 5000;
+                var sample = new List<KeyValuePair<string, long>>(Math.Min(sampleTarget, m_negativeCache.Count));
+                int step = Math.Max(1, m_negativeCache.Count / Math.Min(sampleTarget, m_negativeCache.Count));
+                int idx = 0;
+                foreach (var kv in m_negativeCache)
+                {
+                    if ((idx++ % step) == 0)
+                    {
+                        sample.Add(kv);
+                        if (sample.Count >= sampleTarget) break;
+                    }
+                }
+
+                // sort by expiration ascending (oldest first)
+                sample.Sort(static (a, b) => a.Value.CompareTo(b.Value));
+
+                int needToRemove = Math.Min(m_negativeCachePruneBatch, Math.Max(0, m_negativeCache.Count - m_negativeCacheMaxEntries));
+                for (int i = 0; i < sample.Count && needToRemove > 0; i++)
+                {
+                    if (m_negativeCache.TryRemove(sample[i].Key, out _))
+                        needToRemove--;
+                }
+            }
+        }        
 
         /// <summary>
         /// Recurses through specified directory checking for asset files last
@@ -1025,6 +1147,28 @@ namespace OpenSim.Region.CoreModules.Asset
                     string id = Path.GetFileName(file);
                     if (string.IsNullOrEmpty(id))
                         continue;
+
+                    // Optional cleanup of stale .bak files (from interrupted Replace)
+                    if (m_EnableBakCleanup && id.EndsWith(".bak", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            DateTime lastWrite = File.GetLastWriteTime(file);
+                            if (DateTime.Now - lastWrite > m_BakMaxAge)
+                            {
+                                File.Delete(file);
+                                --dirSize;
+                                cooldown += 2;
+                                if (cooldown >= 20)
+                                {
+                                    Thread.Sleep(60);
+                                    cooldown = 0;
+                                }
+                                continue;
+                            }
+                        }
+                        catch { /* ignore */ }
+                    }
 
                     if (m_defaultAssets.Contains(id) || (UUID.TryParse(id, out UUID uid) && gids.ContainsKey(uid)))
                     {
@@ -1170,7 +1314,7 @@ namespace OpenSim.Region.CoreModules.Asset
                     m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Failed to write asset {asset.ID} to temporary location {tempname} (final {filename}) on cache in {directory}: {e.Message}");
                     return;
                 }
-                catch (UnauthorizedAccessException)
+                catch (UnauthorizedAccessException e)
                 {
                     m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Unauthorized writing asset {asset.ID} to {directory}: {e.Message}");
                     return;
@@ -1456,20 +1600,16 @@ namespace OpenSim.Region.CoreModules.Asset
 
             double weakHitRate = m_weakRefHits * invReq;
 
-            // Sample-based alive counting to reduce CPU cost on large maps
+            // Sample-based alive counting to reduce CPU cost on large maps (configurable)
             int weakEntries = weakAssetReferences.Count;
             int weakEntriesAliveSampled = 0;
             int sampled = 0;
 
-            // @todo: add to config
-            const int sampleTarget = 2000; // sample up to this many entries
+            int sampleTarget = m_HitReportWeakRefSampleTarget; // from config
             int sampleStep = 1;
 
             if (weakEntries > sampleTarget && sampleTarget > 0)
-            {
-                // stride to visit ~sampleTarget entries
                 sampleStep = Math.Max(1, weakEntries / sampleTarget);
-            }
 
             int index = 0;
             foreach (var kv in weakAssetReferences)
@@ -1520,6 +1660,47 @@ namespace OpenSim.Region.CoreModules.Asset
 
                 switch (cmd)
                 {
+                    case "cleanbak":
+                    {
+                        if (!m_FileCacheEnabled)
+                        {
+                            con.Output("File cache not enabled.");
+                            break;
+                        }
+                        if (!m_EnableBakCleanup)
+                        {
+                            con.Output("Bak cleanup disabled by config.");
+                            break;
+                        }
+
+                        int removed = 0;
+                        try
+                        {
+                            foreach (string dir in Directory.EnumerateDirectories(m_CacheDirectory))
+                                removed += CleanBakInDir(dir);
+
+                            // also check root for stray .bak files
+                            foreach (string file in Directory.EnumerateFiles(m_CacheDirectory, "*.bak"))
+                            {
+                                try
+                                {
+                                    if (DateTime.Now - File.GetLastWriteTime(file) > m_BakMaxAge)
+                                    {
+                                        File.Delete(file);
+                                        removed++;
+                                    }
+                                }
+                                catch { }
+                            }
+                            con.Output($"Bak cleanup finished. Removed {removed} files older than {m_BakMaxAge}.");
+                        }
+                        catch (Exception e)
+                        {
+                            con.Output($"Bak cleanup failed: {e.Message}");
+                        }
+                        break;
+                    }                    
+                    
                     case "status":
                     {
                         WorkManager.RunInThreadPool(delegate
@@ -1778,7 +1959,33 @@ namespace OpenSim.Region.CoreModules.Asset
                 con.Output("cfcache status - Display cache status");
                 con.Output("cfcache cachedefaultassets - loads default assets to cache replacing existent ones, this may override grid assets. Use with care");
                 con.Output("cfcache deletedefaultassets - deletes default local assets from cache so they can be refreshed from grid");
+                con.Output("cfcache cleanbak - Remove stale .bak files from file cache now");
             }
+        }
+        
+        private int CleanBakInDir(string dir)
+        {
+            int removed = 0;
+            try
+            {
+                foreach (string subdir in Directory.EnumerateDirectories(dir))
+                    removed += CleanBakInDir(subdir);
+
+                foreach (string file in Directory.EnumerateFiles(dir, "*.bak"))
+                {
+                    try
+                    {
+                        if (DateTime.Now - File.GetLastWriteTime(file) > m_BakMaxAge)
+                        {
+                            File.Delete(file);
+                            removed++;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return removed;
         }
 
         #endregion

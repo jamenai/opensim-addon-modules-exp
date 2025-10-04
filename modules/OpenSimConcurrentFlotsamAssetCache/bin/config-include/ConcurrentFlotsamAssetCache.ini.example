@@ -1,45 +1,115 @@
 ; config-include/ConcurrentFlotsamAssetCache.ini
 [AssetCache]
-    ; Enable or disable the file-based cache. If false, assets won't be cached on disk.
+    ; Enable or disable the on-disk cache. If false, nothing is written to disk.
+    ; Default: true
     FileCacheEnabled = true
-    
-    ; Root directory where cached asset files are stored. Can be absolute or relative to OpenSim.exe.
+
+    ; Root directory for cached asset files (absolute or relative to OpenSim.exe).
+    ; Default: c_assetcache
     CacheDirectory = c_assetcache
-    
-    ; Enable or disable the in-memory cache for faster lookups.
-    MemoryCacheEnabled = true
-    
-    ; Memory cache timeout in hours (floating point). Internally converted to seconds.
-    ; Small values keep RAM usage lower; larger values increase hit rate.
-    MemoryCacheTimeout = 0.25
-    
-    ; Enable negative cache to remember "not found" results for a short time and reduce upstream load.
+
+    ; Enable or disable the in-memory cache (fastest tier).
+    ; Default: false
+    MemoryCacheEnabled = false
+
+    ; Memory cache timeout in hours (float). Internally converted to seconds.
+    ; Small values reduce RAM; larger values may improve hit rate.
+    ; Default: 0.016 (≈ 57.6 seconds)
+    MemoryCacheTimeout = 0.016
+
+    ; Enable negative cache to short-circuit repeated misses for a short time.
+    ; Default: true
     NegativeCacheEnabled = true
-    
-    ; Negative cache TTL in seconds. During this time, repeated misses for the same ID will be short-circuited.
+
+    ; Negative cache TTL in seconds.
+    ; Default: 120
     NegativeCacheTimeout = 120
-    
-    ; Update the file's last-access time on cache hits (touch). Helps expiration logic but can be expensive on some filesystems.
-    ; This is throttled internally to avoid touching too frequently.
-    UpdateFileTimeOnCacheHit = true
-    
-    ; Logging detail for this module (0=minimal, 1=info, 2=verbose warnings).
+
+    ; Optional maximum size for the negative cache to control memory usage.
+    ; When exceeded, a batch of old/expired entries is pruned.
+    ; Default: 100000
+    NegativeCacheMaxEntries = 100000
+
+    ; How many entries to remove when pruning the negative cache.
+    ; Default: 5000
+    NegativeCachePruneBatch = 5000
+
+    ; Update file LastAccessTime on cache hits (touch). Helps expiration logic,
+    ; but can add IO. Internally throttled.
+    ; Default: false (effective, because it is masked by FileCacheEnabled)
+    UpdateFileTimeOnCacheHit = false
+
+    ; Log verbosity for this module (0=minimal, 1=info, 2=verbose warnings).
+    ; Default: 0
     LogLevel = 0
-    
-    ; Display hit-rate statistics every N requests (0 disables).
+
+    ; Show hit-rate statistics every N requests (0 disables).
+    ; Default: 100
     HitRateDisplay = 100
-    
-    ; How long (in hours) files may stay in cache since last access before the background cleaner removes them.
+
+    ; Sampling size used to estimate alive WeakReference entries in hit report.
+    ; Larger values increase accuracy but also CPU work during reporting.
+    ; Default: 2000 (minimum enforced: 100)
+    HitReportWeakRefSampleTarget = 2000
+
+    ; Expiration for on-disk files since last access (in hours).
+    ; Files older than now - FileCacheTimeout are eligible for removal.
+    ; Default: 48
     FileCacheTimeout = 48
-    
-    ; How often (in hours) the background cleaner runs to purge expired files.
+
+    ; How often (in hours) the background cleaner runs.
+    ; Default: 1.0
     FileCleanupTimer = 1.0
-    
-    ; Directory sharding: number of tier levels (1..3). Increases number of nested directories to keep folders smaller.
+
+    ; Directory sharding – number of tier levels (1..3).
+    ; Default: 1
     CacheDirectoryTiers = 1
-    
-    ; Directory sharding: number of characters per tier segment (1..4). Short segments mean more subfolders.
+
+    ; Directory sharding – characters per tier segment (1..4).
+    ; Default: 3
     CacheDirectoryTierLength = 3
-    
-    ; Warn if a single cache directory contains more than this many entries (helps tuning tiering/expiration).
+
+    ; Warn if a single cache directory contains more than this many entries.
+    ; Helps tune sharding/expiration.
+    ; Default: 30000
     CacheWarnAt = 30000
+
+    ; Safer replace behavior: keep a temporary backup when replacing files (Windows/NTFS).
+    ; Backup files (.bak) are placed beside the target file.
+    ; Default: false
+    FileReplaceKeepBackup = false
+
+    ; Allow overwrite moves when supported by the platform/runtime (NET6+).
+    ; Default: true
+    FileMoveAllowOverwrite = true
+
+    ; Cleanup of stale .bak files (from interrupted replacements).
+    ; If enabled, the background cleaner removes old .bak files.
+    ; Default: true
+    BakCleanupEnabled = true
+
+    ; Max age (in hours) for .bak files before they are removed by the cleaner.
+    ; Default: 24 (range enforced: 1 .. 168)
+    BakCleanupMaxAgeHours = 24
+
+    ; Deserialization safety limits (protect against oversized/corrupt cache files):
+    ; Maximum UTF-8 string length per field (bytes). Floors/ceilings enforced internally.
+    ; Default: 262144 (256 KB)  [floor: 32768, ceiling: 2097152]
+    DeserializeMaxStringLenBytes = 262144
+
+    ; Maximum asset data size (MB). Floors/ceilings enforced internally.
+    ; Default: 64  [floor: 8, ceiling: 512]
+    DeserializeMaxDataLenMB = 64
+
+    ; Backoff when a file is being written by another thread (thundering herd control):
+    ; Number of retry attempts.
+    ; Default: 3  [0..10]
+    BackoffAttempts = 3
+
+    ; Initial backoff delay in milliseconds (exponential growth per attempt).
+    ; Default: 5  [0..500]
+    BackoffInitialMs = 5
+
+    ; Maximum backoff delay per attempt in milliseconds (cap).
+    ; Default: 40  [>= BackoffInitialMs, <= 2000]
+    BackoffMaxMs = 40
