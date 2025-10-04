@@ -243,8 +243,9 @@ namespace OpenSim.Region.CoreModules.Asset
         private IAssetService m_AssetService;
         private readonly List<Scene> m_Scenes = new();
         private readonly object timerLock = new();
-
-        private ConcurrentDictionary<string, WeakReference> weakAssetReferences = new();
+        
+        private ConcurrentDictionary<string, WeakReference<AssetBase>> weakAssetReferences = new();
+        
         private static bool m_updateFileTimeOnCacheHit = false;
 
         private static ExpiringKey<string> m_lastFileAccessTimeChange = null;
@@ -481,11 +482,12 @@ namespace OpenSim.Region.CoreModules.Asset
         {
             weakAssetReferences.AddOrUpdate(
                 key,
-                static _ => new WeakReference(null),
-                static (_, existing) => existing);
-
-            if (weakAssetReferences.TryGetValue(key, out var aref))
-                aref.Target = asset;
+                static _ => new WeakReference<AssetBase>(asset),
+                static (_, existing) =>
+                {
+                    existing.SetTarget(asset);
+                    return existing;
+                });
         }
 
         private void UpdateMemoryCache(string key, AssetBase asset)
@@ -587,13 +589,11 @@ namespace OpenSim.Region.CoreModules.Asset
 
         private AssetBase GetFromWeakReference(string id)
         {
-            if (weakAssetReferences.TryGetValue(id, out WeakReference aref))
+            if (weakAssetReferences.TryGetValue(id, out WeakReference<AssetBase> aref)
+                && aref.TryGetTarget(out var asset) && asset is not null)
             {
-                if (aref.Target is AssetBase asset)
-                {
-                    m_weakRefHits++;
-                    return asset;
-                }
+                m_weakRefHits++;
+                return asset;
             }
             return null;
         }
@@ -907,7 +907,7 @@ namespace OpenSim.Region.CoreModules.Asset
                 m_negativeCache.Clear();
             }
 
-            weakAssetReferences = new ConcurrentDictionary<string, WeakReference>();
+            weakAssetReferences = new ConcurrentDictionary<string, WeakReference<AssetBase>>();
         }
 
         private void CleanupExpiredFiles(object source, ElapsedEventArgs e)
@@ -958,7 +958,7 @@ namespace OpenSim.Region.CoreModules.Asset
                     }
                 }
 
-                weakAssetReferences = new ConcurrentDictionary<string, WeakReference>();
+                weakAssetReferences = new ConcurrentDictionary<string, WeakReference<AssetBase>>();
                 m_weakRefHits = 0;
 
                 double fheap = Math.Round((double)((GC.GetTotalMemory(false) - heap) / (1024 * 1024)), 3);
@@ -1171,16 +1171,31 @@ namespace OpenSim.Region.CoreModules.Asset
 
                 try
                 {
-                    if (replace)
-                        File.Delete(filename);
-                    File.Move(tempname, filename);
+                    // Prefer atomic replacement when supported (Windows/NTFS).
+                    // If File.Replace throws (e.g., not supported), fallback to Move strategy.
+                    if (replace && File.Exists(filename))
+                    {
+                        string? backup = null; // no backup to minimize IO; could be set to a temp path if desired
+                        try
+                        {
+                            File.Replace(tempname, filename, backup, ignoreMetadataErrors: true);
+                        }
+                        catch
+                        {
+                            // Fallback to delete+move if Replace is not available/supported
+                            try { File.Delete(filename); } catch { }
+                            File.Move(tempname, filename);
+                        }
+                    }
+                    else
+                    {
+                        // No prior file or not replacing -> simple move
+                        File.Move(tempname, filename);
+                    }
                 }
                 catch
                 {
                     try { File.Delete(tempname); } catch { }
-                    // If we see an IOException here it's likely that some other competing thread has written the
-                    // cache file first, so ignore.  Other IOException errors (e.g. filesystem full) should be
-                    // signally by the earlier temporary file writing code.
                     m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Failed to finalize write for {asset.ID} to {filename}: {e.Message}");
                 }
             }
