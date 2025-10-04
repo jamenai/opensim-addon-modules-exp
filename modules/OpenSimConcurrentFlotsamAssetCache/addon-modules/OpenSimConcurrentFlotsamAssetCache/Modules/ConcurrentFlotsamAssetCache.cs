@@ -243,7 +243,7 @@ namespace OpenSim.Region.CoreModules.Asset
         private readonly object timerLock = new();
         
         private ConcurrentDictionary<string, WeakReference<AssetBase>> weakAssetReferences = new();
-        private readonly ConcurrentDictionary<string, Lazy<AssetBase>> m_inflightFetches = new();
+        private readonly ConcurrentDictionary<string, OpenSim.Framework.Lazy<AssetBase>> m_inflightFetches = new();
         
         private static bool m_updateFileTimeOnCacheHit = false;
 
@@ -842,7 +842,7 @@ namespace OpenSim.Region.CoreModules.Asset
                 bool created = false;
                 var lazyFetch = m_inflightFetches.GetOrAdd(
                     id,
-                    _ => { created = true; return new Lazy<AssetBase>(() => FetchUpstream(id), LazyThreadSafetyMode.ExecutionAndPublication); }
+                    _ => { created = true; return new OpenSim.Framework.Lazy<AssetBase>(() => FetchUpstream(id), OpenSim.Framework.LazyThreadSafetyMode.ExecutionAndPublication); }
                 );
                 if (!created) Interlocked.Increment(ref m_InFlightJoins);
 
