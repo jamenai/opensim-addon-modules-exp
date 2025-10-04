@@ -547,9 +547,13 @@ namespace OpenSim.Region.CoreModules.Asset
         {
             weakAssetReferences.AddOrUpdate(
                 key,
-                static _ => new WeakReference<AssetBase>(asset),
-                static (_, existing) =>
+                _ => new WeakReference<AssetBase>(asset),
+                (_, existing) =>
                 {
+                    // defensive: handle rare case where existing could be null
+                    if (existing is null)
+                        return new WeakReference<AssetBase>(asset);
+                    
                     existing.SetTarget(asset);
                     return existing;
                 });
