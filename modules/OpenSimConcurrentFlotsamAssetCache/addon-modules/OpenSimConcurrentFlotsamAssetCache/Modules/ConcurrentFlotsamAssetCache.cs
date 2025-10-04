@@ -50,7 +50,8 @@ using OpenSim.Services.Interfaces;
 [assembly: AddinDescription("OpenSimConcurrentFlotsamAssetCache module.")]
 [assembly: AddinAuthor("Christopher Händler")]
 
-namespace OpenSim.Region.CoreModules.Asset
+//namespace OpenSim.Region.CoreModules.Asset
+namespace OpenSimConcurrentFlotsamAssetCache.Modules
 {
     [Extension(Path = "/OpenSim/RegionModules", NodeName = "RegionModule", Id = "ConcurrentFlotsamAssetCache")]
     public class ConcurrentFlotsamAssetCache : ISharedRegionModule, IAssetCache, IAssetService
@@ -99,7 +100,7 @@ namespace OpenSim.Region.CoreModules.Asset
             WriteString(bw, asset.Name);
             WriteString(bw, asset.Description);
 
-            bw.Write((sbyte)asset.Type);
+            bw.Write(asset.Type);
             bw.Write((uint)asset.Flags);
 
             var data = asset.Data ?? Array.Empty<byte>();
