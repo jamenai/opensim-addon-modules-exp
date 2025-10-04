@@ -734,7 +734,9 @@ namespace OpenSim.Region.CoreModules.Asset
             catch (DirectoryNotFoundException) { }
             catch (System.Runtime.Serialization.SerializationException e)
             {
-                m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Failed to get file {filename} for asset {id}: {e.Message}");
+                long size = 0;
+                try { size = new FileInfo(filename).Length; } catch { }
+                m_log.Warn($"[CONCURRENT FLOTSAM ASSET CACHE]: Bad cache file {filename} (size {size}): {e.Message}");
 
                 // If there was a problem deserializing the asset, the asset may
                 // either be corrupted OR was serialized under an old format
@@ -778,8 +780,10 @@ namespace OpenSim.Region.CoreModules.Asset
             // guard for self calling
             if (m_AssetService == null || ReferenceEquals(m_AssetService, this))
                 return null;
-            return m_AssetService is null ? null : m_AssetService.Get(id);
+            return m_AssetService.Get(id);
         }
+        
+        private ulong m_InFlightJoins;
         
         // In-flight de-duplication + upstream fetch integration
         private bool TryGetWithUpstream(string id, out AssetBase asset)
@@ -835,10 +839,12 @@ namespace OpenSim.Region.CoreModules.Asset
                 if (m_AssetService == null || ReferenceEquals(m_AssetService, this))
                     return false; 
                 
+                bool created = false;
                 var lazyFetch = m_inflightFetches.GetOrAdd(
                     id,
-                    _ => new Lazy<AssetBase>(() => FetchUpstream(id), LazyThreadSafetyMode.ExecutionAndPublication)
+                    _ => { created = true; return new Lazy<AssetBase>(() => FetchUpstream(id), LazyThreadSafetyMode.ExecutionAndPublication); }
                 );
+                if (!created) Interlocked.Increment(ref m_InFlightJoins);
 
                 asset = lazyFetch.Value; // triggers single actual fetch; others await the result
 
@@ -1892,6 +1898,9 @@ namespace OpenSim.Region.CoreModules.Asset
                                     }
                                 }
                             }
+                            
+                            con.Output("[CONCURRENT FLOTSAM ASSET CACHE] In-flight joins: {0}", m_InFlightJoins);
+                            
                         }, null, "CacheStatus", false);
 
                         break;
