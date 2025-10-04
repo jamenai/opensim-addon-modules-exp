@@ -1,0 +1,45 @@
+; config-include/ConcurrentFlotsamAssetCache.ini
+[AssetCache]
+    ; Enable or disable the file-based cache. If false, assets won't be cached on disk.
+    FileCacheEnabled = true
+    
+    ; Root directory where cached asset files are stored. Can be absolute or relative to OpenSim.exe.
+    CacheDirectory = c_assetcache
+    
+    ; Enable or disable the in-memory cache for faster lookups.
+    MemoryCacheEnabled = true
+    
+    ; Memory cache timeout in hours (floating point). Internally converted to seconds.
+    ; Small values keep RAM usage lower; larger values increase hit rate.
+    MemoryCacheTimeout = 0.25
+    
+    ; Enable negative cache to remember "not found" results for a short time and reduce upstream load.
+    NegativeCacheEnabled = true
+    
+    ; Negative cache TTL in seconds. During this time, repeated misses for the same ID will be short-circuited.
+    NegativeCacheTimeout = 120
+    
+    ; Update the file's last-access time on cache hits (touch). Helps expiration logic but can be expensive on some filesystems.
+    ; This is throttled internally to avoid touching too frequently.
+    UpdateFileTimeOnCacheHit = true
+    
+    ; Logging detail for this module (0=minimal, 1=info, 2=verbose warnings).
+    LogLevel = 0
+    
+    ; Display hit-rate statistics every N requests (0 disables).
+    HitRateDisplay = 100
+    
+    ; How long (in hours) files may stay in cache since last access before the background cleaner removes them.
+    FileCacheTimeout = 48
+    
+    ; How often (in hours) the background cleaner runs to purge expired files.
+    FileCleanupTimer = 1.0
+    
+    ; Directory sharding: number of tier levels (1..3). Increases number of nested directories to keep folders smaller.
+    CacheDirectoryTiers = 1
+    
+    ; Directory sharding: number of characters per tier segment (1..4). Short segments mean more subfolders.
+    CacheDirectoryTierLength = 3
+    
+    ; Warn if a single cache directory contains more than this many entries (helps tuning tiering/expiration).
+    CacheWarnAt = 30000

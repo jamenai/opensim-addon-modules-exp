@@ -1,0 +1,6 @@
+[Modules]
+    ; Select which asset cache module to use.
+    ; Must match the module's Name property (here: "ConcurrentFlotsamAssetCache").
+    ; If you want to override the default FlotsamAssetCache, set this to ConcurrentFlotsamAssetCache.
+    AssetCaching = ConcurrentFlotsamAssetCache
+    Include-ConcurrentFlotsamCache = "config-include/ConcurrentFlotsamAssetCache.ini"

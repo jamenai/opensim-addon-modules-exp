@@ -1,0 +1,28 @@
+<?xml version="1.0" ?>
+<Project frameworkVersion="v8_0" name="OpenSimConcurrentFlotsamAssetCache.Modules" path="addon-modules/OpenSimConcurrentFlotsamAssetCache/Modules" type="Library">
+    <Configuration name="Debug">
+        <Options>
+            <OutputPath>../../../bin/</OutputPath>
+        </Options>
+    </Configuration>
+    <Configuration name="Release">
+        <Options>
+            <OutputPath>../../../bin/</OutputPath>
+        </Options>
+    </Configuration>
+
+    <ReferencePath>../../../bin/</ReferencePath>
+    <Reference name="OpenMetaverseTypes"/>
+    <Reference name="OpenMetaverse"/>
+    <Reference name="OpenSim.Framework"/>
+    <Reference name="OpenSim.Framework.Monitoring"/>
+    <Reference name="OpenSim.Region.Framework"/>
+    <Reference name="OpenSim.Region.Framework.Interfaces"/>
+    <Reference name="OpenSim.Region.Framework.Scenes"/>
+    <Reference name="OpenSim.Server.Base"/>
+    <Reference name="OpenSim.Services.Interfaces"/>
+    <Reference name="Nini"/>
+    <Reference name="log4net"/>
+    <Reference name="Mono.Addins"/>
+
+</Project>
