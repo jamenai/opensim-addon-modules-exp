@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project frameworkVersion="v8_0" name="OpenSimRegionWarmupHealthGuard" path="addon-modules/OpenSimRegionWarmupHealthGuard/Modules" type="Library" language="C#">
+
+    <!--
+      prebuild.xml for OpenSim addon-modules/OpenSimRegionWarmupHealthGuard
+      Builds a single assembly containing all region modules:
+        - RegionHealthMonitor
+        - RegionMetricsExporter
+        - RegionWebhookAlerts
+        - RegionAutoHeal
+        - RegionWarmup
+        - RegionPolicyEngine
+    -->
+    
+    <Configuration name="Debug" platform="AnyCPU">
+        <Options>
+            <OutputPath>../../../bin/</OutputPath>
+            <Optimize>false</Optimize>
+            <DefineConstants>DEBUG;TRACE</DefineConstants>
+            <WarningLevel>4</WarningLevel>
+            <DebugSymbols>true</DebugSymbols>
+        </Options>
+    </Configuration>
+
+    <Configuration name="Release" platform="AnyCPU">
+        <Options>
+            <OutputPath>../../../bin/</OutputPath>
+            <Optimize>true</Optimize>
+            <DefineConstants>TRACE</DefineConstants>
+            <WarningLevel>4</WarningLevel>
+            <DebugSymbols>false</DebugSymbols>
+        </Options>
+    </Configuration>
+    
+    <ReferencePath>../../../bin/</ReferencePath>
+    <Reference name="System" />
+    <Reference name="System.Core" />
+    <Reference name="System.Xml" />
+    <Reference name="System.Xml.Linq" />
+    <Reference name="System.Net.Http" />
+    <Reference name="Mono.Addins" />
+    <Reference name="log4net" />
+    <Reference name="Nini"/>
+
+
+    <!-- OpenSim core references (relative to repo root) -->
+    <Reference name="OpenSim.Framework" />
+    <Reference name="OpenSim.Region.Framework" />
+    <Reference name="OpenMetaverseTypes" />
+    <Reference name="OpenMetaverse" />
+
+    <Files>
+        <!-- Source files -->
+        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/*.cs" />
+        <!--
+        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionMetricsExporter.cs" />
+        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionWebhookAlerts.cs" />
+        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionAutoHeal.cs" />
+        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionWarmupModule.cs" />
+        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionPolicyEngineModule.cs" />
+        -->
+
+        <!-- Optional docs/examples (not compiled) -->
+        <Exclude pattern="addon-modules/OpenSimRegionWarmupHealthGuard/*.md" />
+        <Exclude pattern="addon-modules/OpenSimRegionWarmupHealthGuard/*.MD" />
+        <Exclude pattern="addon-modules/OpenSimRegionWarmupHealthGuard/*.ini.example" />
+    </Files>
+</Project>
