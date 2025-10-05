@@ -1,0 +1,22 @@
+﻿[Modules]
+    
+    ; Enable/Disable RegionAutoHeal module
+    RegionAutoHeal = enabled
+    
+    ; Enable/Disable RegionHealthMonitor module
+    RegionHealthMonitor = enabled
+
+    ; Enable/Disable RegionHealthMonitor module
+    RegionMetricsExporter = enabled
+    
+    ; Enable/Disable RegionHealthMonitor module
+    RegionPolicyEngine = enabled
+    
+    ; Enable/Disable RegionHealthMonitor module
+    RegionWarmup = enabled
+    
+    ; Enable/Disable RegionHealthMonitor module
+    RegionWebhookAlerts = enabled
+    
+    ; Additional configuration files to include
+    Include-RegionWarmupHealthGuard = "config-include/RegionWarmupHealthGuard.ini"

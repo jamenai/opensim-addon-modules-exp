@@ -1,0 +1,127 @@
+﻿[RegionAutoHeal]
+
+    ; Sicherer Start: nur simulieren (Logs/Alerts), keine Änderungen
+    DryRun = true
+    
+    ; Echte Script-Resets nur bei expliziter Freigabe
+    EnableScriptReset = false
+    
+    ; Best-Effort-Drosselung „lauter“ Updater
+    ThrottleHeavyUpdaters = true
+    
+    ThrottleThresholdUpdatesPerSec = 30
+    
+    ; Ab wann reagiert werden soll (Skriptfehler-Burst)
+    ScriptErrorBurstThreshold = 25
+    
+    ; Sperrzeit zwischen Eingriffen (Sekunden)
+    CooldownSec = 60
+
+    
+[RegionHealthMonitor]
+
+    HealthIntervalSec = 30
+    
+    WarnScriptTimeMs = 12.0
+    
+    WarnPhysicsTimeMs = 6.0
+    
+    WarnNetTimeMs = 6.0
+    
+    WarnScriptErrors = 10
+    
+    ; Optional CSV export (leave empty to disable)
+    MetricsExportFile =
+
+    
+[RegionMetricsExporter]
+
+    ; This module reads HealthSamples from the RegionHealthMonitor (IRegionHealthBus). Ensure that RegionHealthMonitor is active.
+    ; In multi-region processes, each region should use its own port (or create a shared, process-wide export instance).
+    ; Endpoint: http://BindAddress:HttpPort/metrics
+    ; Pull-only, minimal resource consumption.
+
+    ; HTTP pull endpoint for Prometheus (low overhead)
+    HttpPort = 9109
+    
+    ; Bind only to loopback by default (recommended). Set 0.0.0.0 to expose network-wide.
+    BindAddress = 127.0.0.1
+    
+    ; Metric name prefix
+    MetricsPrefix = opensim_region_
+    
+    ; Include region name as a label
+    IncludeRegionLabel = true
+
+    
+[RegionPolicyEngine]
+
+    ; The overlays are intentionally generic (key=value). A module that supports overlays optionally implements IPolicyOverlayConsumer and maps relevant keys to internal settings.
+    ; The included modules also work without overlay support. You can gradually add overlay support to individual modules (e.g., HealthMonitor: HealthIntervalSec, WebhookAlerts: MinSeverity, Warmup: DeepWarmupLimit, AutoHeal: ThrottleHeavyUpdaters).
+    ; The cron field is greatly simplified here (hourly window). A parser could be added later for true cron behavior.
+
+    Enabled = true
+    ; Prüfintervall (Sekunden)
+    CheckIntervalSec = 60
+
+    ; Liste von Profilen (kommasepariert)
+    Profiles = Nightly,Event
+
+    ; Einfaches Stundenfenster (Beispiele):
+    ; 20-6  -> zwischen 20:00 und 06:59
+    ; 8-18  -> zwischen 08:00 und 18:59
+    ; 22    -> genau um 22 Uhr
+    Nightly.Cron = * * 20-6
+    
+    ; Key=Value;Key=Value (Overlays, die die Module verstehen müssen)
+    Nightly.Overrides = HealthIntervalSec=60; DeepWarmupLimit=400; MinSeverity=Error
+
+    Event.Cron =
+    
+    Event.Overrides = ThrottleHeavyUpdaters=false
+
+    
+[RegionWarmup]
+
+    ; Sofortiges Warmup bei Regionstart
+    WarmupOnRegionLoaded = true
+    
+    ; Einzelne Warmup-Schritte
+    TouchTerrain = true
+    
+    PreloadAssets = true
+    
+    PrimeScriptVM = true
+    
+    ; Optionaler tiefer Warmup-Scan (Anzahl Objekte) nach Verzögerung
+    DeepWarmupLimit = 200
+    
+    DeepWarmupDelaySec = 30
+  
+    
+[RegionWebhookAlerts]
+    
+    ; Supports generic JSON. The payload is an array of events.
+    ; Batching + rate limit prevents spam. Reduce BatchWindowSec for immediate delivery.
+    ; Subscribes to health events from the RegionHealthMonitor (IRegionHealthBus). Ensure this is enabled.
+
+    ; Generic JSON webhook endpoint (e.g., n8n webhook URL)
+    Url = https://your-n8n-host/webhook/abc123
+
+    ; Minimal severity to send: Trace|Info|Warn|Error (default Warn)
+    MinSeverity = Warn
+
+    ; Collect incidents for N seconds and send in one POST
+    BatchWindowSec = 10
+
+    ; Max POSTs per minute (rate limit)
+    RateLimitPerMin = 20
+
+    ; Timeouts (ms)
+    ConnectTimeoutMs = 5000
+    SendTimeoutMs = 5000
+
+    ; Which fields to include in payload.
+    ; Available keys:
+    ; ts,region,severity,message,metrics,agents,prims,scriptMs,physMs,netMs,scriptErrors,uptime
+    PayloadFields = region,agents,prims,scriptMs,physMs,netMs,scriptErrors,uptime,severity,message,ts
