@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using System.Timers;
+using System.Globalization;
 using log4net;
 using Mono.Addins;
 using Nini.Config;
@@ -148,11 +149,21 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
             {
                 try
                 {
-                    var t = _scene.TerrainChannel;
-                    var x = _scene.RegionInfo.RegionSizeX / 2;
-                    var y = _scene.RegionInfo.RegionSizeY / 2;
-                    var h = t.GetNormalizedGroundHeight(x, y);
-                    Log.Debug($"[WARMUP] terrain touch ok (h={h:0.00})");
+                    var terrain = _scene.RequestModuleInterface<ITerrainChannel>();
+                    if (terrain != null)
+                    {
+                        // use region center, within bounds
+                        float h = terrain.GetHeight(
+                                (int)(_scene.RegionInfo.RegionSizeX / 2u), 
+                                (int)(_scene.RegionInfo.RegionSizeY / 2u)
+                            );
+
+                        Log.Debug(string.Format(CultureInfo.InvariantCulture, "[WARMUP] terrain touch ok (h={0:0.00})", h));
+                    }
+                    else
+                    {
+                        Log.Debug("[WARMUP] terrain channel not available; skipping terrain touch.");
+                    }
                 }
                 catch (Exception e) { Log.Debug($"[WARMUP] terrain touch skipped: {e.Message}"); }
             }
@@ -163,9 +174,14 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
                 {
                     foreach (var so in _scene.GetSceneObjectGroups().Take(50))
                     {
-                        var _ = so.Parts?.Length;
-                        foreach (var p in so.Parts)
-                            _ = p.Inventory?.GetInventoryItems()?.Count;
+                        var parts = so.Parts;
+                        if (parts == null) continue;
+                        _ = parts.Length;
+                        foreach (var p in parts)
+                        {
+                            var items = p.Inventory?.GetInventoryItems();
+                            _ = items?.Count ?? 0;
+                        }
                     }
                     Log.Debug("[WARMUP] limited asset pre-touch ok");
                 }
@@ -179,8 +195,32 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
                     var engine = _scene.RequestModuleInterface<IScriptModule>();
                     if (engine != null)
                     {
-                        int cnt = engine.GetScriptCount();
-                        Log.Debug($"[WARMUP] script VM primed (scripts={cnt})");
+                        var engineName = engine.ScriptEngineName;
+                        int touched = 0;
+                        foreach (var so in _scene.GetSceneObjectGroups())
+                        {
+                            foreach (var p in so.Parts)
+                            {
+                                var items = p.Inventory?.GetInventoryItems();
+                                if (items == null) continue;
+                                foreach (var inv in items)
+                                {
+                                    if (inv == null) continue;
+                                    if (inv.Type == (int)OpenMetaverse.AssetType.LSLText || inv.Type == (int)OpenMetaverse.AssetType.LSLBytecode)
+                                    {
+                                        touched++;
+                                        if (touched >= 10) break;
+                                    }
+                                }
+                                if (touched >= 10) break;
+                            }
+                            if (touched >= 10) break;
+                        }
+                        Log.Debug($"[WARMUP] script VM primed (engine='{engineName}', touchedScripts~{touched})");
+                    }
+                    else
+                    {
+                        Log.Debug("[WARMUP] no script module found to prime.");
                     }
                 }
                 catch (Exception e) { Log.Debug($"[WARMUP] script VM prime skipped: {e.Message}"); }
