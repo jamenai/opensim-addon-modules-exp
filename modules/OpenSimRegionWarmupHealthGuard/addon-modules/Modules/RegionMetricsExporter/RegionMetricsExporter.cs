@@ -12,11 +12,6 @@ using OpenSim.Framework.Console;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
 
-[assembly: Addin("RegionMetricsExporter", "1.0.0")]
-[assembly: AddinDependency("OpenSim.Region.Framework", OpenSim.VersionInfo.VersionNumber)]
-[assembly: AddinDescription("Prometheus (HTTP pull) metrics exporter for RegionHealthMonitor.")]
-[assembly: AddinAuthor("Christopher Händler")]
-
 namespace OpenSimRegionWarmupHealthGuard.Modules
 {
     [Extension(Path = "/OpenSim/RegionModules", NodeName = "RegionModule", Id = "RegionMetricsExporter")]

@@ -11,11 +11,6 @@ using OpenSim.Framework.Console;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
 
-[assembly: Addin("RegionHealthMonitor", "1.0.0")]
-[assembly: AddinDependency("OpenSim.Region.Framework", OpenSim.VersionInfo.VersionNumber)]
-[assembly: AddinDescription("Region health polling + threshold warnings + CSV export + health event bus.")]
-[assembly: AddinAuthor("Christopher Händler")]
-
 namespace OpenSimRegionWarmupHealthGuard.Modules
 {
     // Simple health sample DTO

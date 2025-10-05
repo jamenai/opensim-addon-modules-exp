@@ -13,11 +13,6 @@ using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
 using System.IO;
 
-[assembly: Addin("RegionWebhookAlerts", "1.0.0")]
-[assembly: AddinDependency("OpenSim.Region.Framework", OpenSim.VersionInfo.VersionNumber)]
-[assembly: AddinDescription("Generic JSON webhook alerts (batching + rate-limit) for RegionHealthMonitor.")]
-[assembly: AddinAuthor("Christopher Händler")]
-
 namespace OpenSimRegionWarmupHealthGuard.Modules
 {
     public enum AlertSeverity { Trace = 0, Info = 1, Warn = 2, Error = 3 }

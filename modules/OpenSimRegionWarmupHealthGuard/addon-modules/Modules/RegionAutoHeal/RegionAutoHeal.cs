@@ -11,11 +11,6 @@ using OpenSim.Framework.Console;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
 
-[assembly: Addin("RegionAutoHeal", "1.0.0")]
-[assembly: AddinDependency("OpenSim.Region.Framework", OpenSim.VersionInfo.VersionNumber)]
-[assembly: AddinDescription("Auto-heal (dry-run by default): targeted script reset and best-effort throttling of heavy updaters.")]
-[assembly: AddinAuthor("Christopher Händler")]
-
 namespace OpenSimRegionWarmupHealthGuard.Modules
 {
     [Extension(Path = "/OpenSim/RegionModules", NodeName = "RegionModule", Id = "RegionAutoHeal")]

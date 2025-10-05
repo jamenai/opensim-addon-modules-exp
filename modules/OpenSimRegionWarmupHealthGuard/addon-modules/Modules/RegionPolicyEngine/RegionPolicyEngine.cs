@@ -11,11 +11,6 @@ using OpenSim.Framework.Console;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
 
-[assembly: Addin("RegionPolicyEngine", "1.0.0")]
-[assembly: AddinDependency("OpenSim.Region.Framework", OpenSim.VersionInfo.VersionNumber)]
-[assembly: AddinDescription("Applies time-based/profile overlays to other modules' configs (cooperative).")]
-[assembly: AddinAuthor("Christopher Händler")]
-
 namespace OpenSimRegionWarmupHealthGuard.Modules
 {
     public interface IPolicyOverlayConsumer

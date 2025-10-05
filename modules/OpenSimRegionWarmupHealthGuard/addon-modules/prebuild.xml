@@ -33,15 +33,10 @@
     </Configuration>
 
     <ReferencePath>../../../bin/</ReferencePath>
-    <Reference name="System" />
-    <Reference name="System.Core" />
-    <Reference name="System.Xml" />
-    <Reference name="System.Xml.Linq" />
-    <Reference name="System.Net.Http" />
+
     <Reference name="Mono.Addins" />
     <Reference name="log4net" />
     <Reference name="Nini"/>
-
 
     <!-- OpenSim core references (relative to repo root) -->
     <Reference name="OpenSim.Framework" />
@@ -52,6 +47,7 @@
     <Files>
         <!-- Source files -->
         <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/*.cs" />
+        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/*/*.cs" />
         <!-- Optional docs/examples (not compiled) -->
         <Exclude pattern="addon-modules/OpenSimRegionWarmupHealthGuard/*.md" />
         <Exclude pattern="addon-modules/OpenSimRegionWarmupHealthGuard/*.MD" />
