@@ -80,6 +80,10 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
 
         private Timer _healthTimer;
         private volatile int _opGuard;
+        
+        // Per-region start time to compute uptime for this scene instance.
+        // This is important if multiple regions run in the same process.
+        private DateTime _regionStartUtc = DateTime.UtcNow;
 
         // Expose bus for other modules
         private readonly RegionHealthBus _bus = new RegionHealthBus();
@@ -113,7 +117,10 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
         {
             if (!_enabled) return;
             _scene = scene;
-
+            
+            // Track per-region start moment (now that we know which scene this module is bound to).
+            _regionStartUtc = DateTime.UtcNow;
+            
             // Make bus discoverable to other modules
             _scene.RegisterModuleInterface<IRegionHealthBus>(_bus);
             _scene.RegisterModuleInterface(this);
@@ -246,12 +253,17 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
             float scriptMs = 0f, physMs = 0f, netMs = 0f;
             try
             {
-                var stats = _scene.StatsReporter; // 0.9.3.x provides this
+                var stats = _scene.StatsReporter;
                 if (stats != null)
                 {
-                    scriptMs = stats.ScriptMs;
-                    physMs = stats.PhysicsMs;
-                    netMs = stats.NetMs;
+                    var arr = stats.LastReportedSimStats;
+                    if (arr != null && arr.Length > (int)StatsIndex.ScriptMS)
+                    {
+                        // Read times from SimStatsReporter via indexed array.
+                        netMs = arr[(int)StatsIndex.NetMS];
+                        physMs = arr[(int)StatsIndex.PhysicsMS];
+                        scriptMs = arr[(int)StatsIndex.ScriptMS];
+                    }
                 }
             }
             catch { }
@@ -259,8 +271,10 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
             int agents = 0, prims = 0, scriptErrors = 0;
             try
             {
-                agents = _scene.GetRootAgentCount() + _scene.GetChildAgentCount();
-                prims = _scene.GetTotalObjectsCount();
+                // Agent counts via SceneGraph.
+                agents = _scene.SceneGraph.GetRootAgentCount() + _scene.SceneGraph.GetChildAgentCount();
+                // Total object count via SceneGraph.
+                prims = _scene.SceneGraph.GetTotalObjectsCount();
             }
             catch { }
 
@@ -268,12 +282,23 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
             {
                 var engine = _scene.RequestModuleInterface<IScriptModule>();
                 if (engine != null)
-                    scriptErrors = engine.GetScriptErrorCount();
+                {
+                    // No direct "script error count" in this API; use active script count as a proxy
+                    // or set this to 0 if you prefer not to approximate.
+                    scriptErrors = _scene.SceneGraph.GetActiveScriptsCount();
+                }
             }
             catch { }
 
+            // Compute per-region uptime based on when this module attached to the scene.
             TimeSpan uptime = TimeSpan.Zero;
-            try { uptime = DateTime.UtcNow - _scene.RegionInfo.StartupTime; } catch { }
+            try
+            {
+                var now = DateTime.UtcNow;
+                if (now > _regionStartUtc)
+                    uptime = now - _regionStartUtc;
+            }
+            catch { }
 
             return new HealthSample
             {
