@@ -1,29 +1,70 @@
-# OpenSim Add-on Module (Experimental) (ENGLISH)
+# OpenSim Add-on Modules
 
-This repository contains experimental add-on modules for OpenSimulator (OpenSim)
+Curated add-on modules for OpenSimulator (OpenSim). Each module is focused on a specific task, comes with example configuration, and integrates via standard OpenSim Region Framework APIs.
 
-⚠️ Warning:
-The code published here is not suitable for production environments. It may be unstable and have unpredictable effects. Use entirely at your own risk!
+- License: MIT
+- Status: Community modules (alpha). Not yet tested in production environments.
+- Compatibility: Typical OpenSim builds using Mono.Addins and OpenSim.Region.Framework.*
 
-## Focus Areas
+> Note: These modules have not been production-tested by the author. Use at your own discretion and test in staging first.
 
-The current focus is on the "ConcurrentFlotsamAssetCache" extension, which uses a concurrent flow-based approach to the core FlotsamAssetCache module.
+---
 
-- Experimental module for performance testing
-- Learning and foundation for further development and testing
+## Modules Overview
 
+| Module | Description | Key Features | Docs |
+|---|---|---|---|
+| SceneSnapshot | Automatic region snapshots (OAR) with retention and one-step restore, executed inside the simulator. | Interval-based snapshots; hourly/daily retention; console commands (create/list/restore/prune/status); atomic writes; optional merge-restore. | Folder: [modules/OpenSimSceneSnapshot](modules/OpenSimSceneSnapshot) • README: [modules/OpenSimSceneSnapshot/README.MD](modules/OpenSimSceneSnapshot/README.MD) • Config: [SceneSnapshot.ini.example](modules/OpenSimSceneSnapshot/bin/config-include/SceneSnapshot.ini.example) |
+| ConcurrentFlotsamAssetCache | High-throughput asset cache with multi-layer design, in-flight de-duplication and safe on-disk persistence. | WeakRef/memory/file cache layers; atomic replace/move; negative cache; periodic cleanup; console tooling; upstream de-dup. | Folder: [modules/OpenSimConcurrentFlotsamAssetCache](modules/OpenSimConcurrentFlotsamAssetCache) • README: [modules/OpenSimConcurrentFlotsamAssetCache/README.MD](modules/OpenSimConcurrentFlotsamAssetCache/README.MD) • Commands: [COMMANDS.MD](modules/OpenSimConcurrentFlotsamAssetCache/COMMANDS.MD) • Migration: [MIGRATION.MD](modules/OpenSimConcurrentFlotsamAssetCache/MIGRATION.MD) • Comparison: [COMPARISON.MD](modules/OpenSimConcurrentFlotsamAssetCache/COMPARISON.MD) • Config: [ConcurrentFlotsamAssetCache.ini.example](modules/OpenSimConcurrentFlotsamAssetCache/bin/config-include/ConcurrentFlotsamAssetCache.ini.example) |
 
+---
 
-# OpenSim Add-on Module (Experimentell) (DEUTSCH)
+## Quick Start
 
-Dieses Repository enthält experimentelle Add-on-Module für OpenSimulator (OpenSim)
+1) Build
+- Build these modules alongside your OpenSim solution so they reference the standard OpenSim Region Framework assemblies.
 
-⚠️ Warnung:
-Der hier veröffentlichte Code ist nicht für Produktionsumgebungen geeignet. Er kann instabil sein und unvorhersehbare Effekte haben. Nutzung ausschließlich auf eigene Gefahr!
+2) Deploy
+- Copy the compiled assemblies to your OpenSim bin/ (or RegionModules) directory as you would for any add-on.
 
-## Schwerpunkte
+3) Configure
+- Enable modules in your OpenSim.ini [Modules] section.
+- Include the matching config file(s) from each module’s bin/config-include folder.
 
-Der Schwerpunkt liegt aktuell auf der Erweiterung "ConcurrentFlotsamAssetCache" mit einem Concurrent-Flow-basierten Ansatz gegenüber dem Core Modul FlotsamAssetCache.
+4) Restart OpenSim
+- Restart to let Mono.Addins discover and load the modules.
 
-- Experimentelle Module zur Performance-Erprobung
-- Learning und Grundlagen für weitere Entwicklungen und Tests
+---
+
+## Enable Examples
+
+SceneSnapshot (OpenSim.ini):
+
+~~~
+[Modules] 
+    SceneSnapshot = enabled 
+    Include-SceneSnapshot = "config-include/SceneSnapshot.ini"
+~~~
+
+ConcurrentFlotsamAssetCache (OpenSim.ini):
+
+~~~
+[Modules] 
+    AssetCaching = ConcurrentFlotsamAssetCache 
+    Include-ConcurrentFlotsamCache = "config-include/ConcurrentFlotsamAssetCache.ini"
+~~~
+
+---
+
+## Notes and Recommendations
+
+- Validation first: Please evaluate in a staging or test region before deploying to production.
+- Backups: Keep external/offsite backups even when using SceneSnapshot for frequent in-sim snapshots.
+- Storage: For the asset cache, use reliable storage that supports atomic renames/replaces; monitor disk usage and cleanup cycles.
+- Contributions: Feedback and PRs for fixes and hardening are welcome.
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
