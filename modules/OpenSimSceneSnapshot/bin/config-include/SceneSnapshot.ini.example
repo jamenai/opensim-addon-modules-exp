@@ -1,0 +1,12 @@
+﻿[SceneSnapshot]
+    
+    SnapshotDirectory = snapshots
+    
+    IntervalMinutes = 60
+    KeepHourly = 24
+    KeepDaily = 7
+    
+    AutoAtStartup = false
+    AutoAtShutdown = true
+
+    RestoreMode = Replace

@@ -1,0 +1,3 @@
+﻿[Modules]
+SceneSnapshot = enabled
+Include-SceneSnapshot = "config-include/SceneSnapshot.ini"
