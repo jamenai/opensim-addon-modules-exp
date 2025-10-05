@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project frameworkVersion="v8_0" name="OpenSimRegionWarmupHealthGuard" path="addon-modules/OpenSimRegionWarmupHealthGuard/Modules" type="Library" language="C#">
+<Project frameworkVersion="v8_0" name="OpenSimRegionWarmupHealthGuard.Modules" path="addon-modules/OpenSimRegionWarmupHealthGuard/Modules" type="Library" language="C#">
 
     <!--
       prebuild.xml for OpenSim addon-modules/OpenSimRegionWarmupHealthGuard
@@ -11,7 +11,7 @@
         - RegionWarmup
         - RegionPolicyEngine
     -->
-    
+
     <Configuration name="Debug" platform="AnyCPU">
         <Options>
             <OutputPath>../../../bin/</OutputPath>
@@ -31,7 +31,7 @@
             <DebugSymbols>false</DebugSymbols>
         </Options>
     </Configuration>
-    
+
     <ReferencePath>../../../bin/</ReferencePath>
     <Reference name="System" />
     <Reference name="System.Core" />
@@ -52,14 +52,6 @@
     <Files>
         <!-- Source files -->
         <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/*.cs" />
-        <!--
-        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionMetricsExporter.cs" />
-        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionWebhookAlerts.cs" />
-        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionAutoHeal.cs" />
-        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionWarmupModule.cs" />
-        <Match pattern="addon-modules/OpenSimRegionWarmupHealthGuard/Modules/RegionPolicyEngineModule.cs" />
-        -->
-
         <!-- Optional docs/examples (not compiled) -->
         <Exclude pattern="addon-modules/OpenSimRegionWarmupHealthGuard/*.md" />
         <Exclude pattern="addon-modules/OpenSimRegionWarmupHealthGuard/*.MD" />
