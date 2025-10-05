@@ -19,10 +19,17 @@
     ; 22    -> genau um 22 Uhr
     Nightly.Cron = * * 20-6
     ; Key=Value;Key=Value (Overlays, die die Module verstehen müssen)
-    Nightly.Overrides = HealthIntervalSec=60; DeepWarmupLimit=400; MinSeverity=Error
+    Nightly.Overrides = 
+
+    HealthIntervalSec=60 
+
+    ; DeepWarmupLimit=400
+    ; MinSeverity=Error
 
     Event.Cron =
-    Event.Overrides = ThrottleHeavyUpdaters=false
+    Event.Overrides = 
+
+    ThrottleHeavyUpdaters=false
 ~~~
 
 ## Notes
