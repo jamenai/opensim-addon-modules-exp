@@ -145,7 +145,11 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
                 {
                     _profileCron.TryGetValue(p, out var cron);
                     _profileOverrides.TryGetValue(p, out var dict);
-                    MainConsole.Instance.Output($" - {p}: Cron='{cron}' Overrides='{string.Join(";", dict.Select(kv => kv.Key + \"=\" + kv.Value))}'");
+
+                    string ovText = dict != null && dict.Count > 0
+                        ? string.Join(";", dict.Select(kv => $"{kv.Key}={kv.Value}"))
+                        : "";
+                    MainConsole.Instance.Output($" - {p}: Cron='{cron}' Overrides='{ovText}'");
                 }
                 return;
             }
@@ -153,7 +157,7 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
             if ((cmd == "apply" || cmd == "dryrun") && args.Length >= 3)
             {
                 var profile = args[2];
-                if (!_profileOverrides.TryGetValue(profile, out var ov))
+                if (!_profileOverrides.TryGetValue(profile, out var ov) || ov == null)
                 {
                     MainConsole.Instance.Output($"[POLICY] Profile not found: {profile}");
                     return;
@@ -161,7 +165,10 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
 
                 if (cmd == "dryrun")
                 {
-                    MainConsole.Instance.Output($"[POLICY] DryRun profile={profile} -> {string.Join(";", ov.Select(kv => kv.Key + \"=\" + kv.Value))}");
+                    string ovText = ov.Count > 0
+                        ? string.Join(";", ov.Select(kv => $"{kv.Key}={kv.Value}"))
+                        : "";
+                    MainConsole.Instance.Output($"[POLICY] DryRun profile={profile} -> {ovText}");
                     return;
                 }
 
