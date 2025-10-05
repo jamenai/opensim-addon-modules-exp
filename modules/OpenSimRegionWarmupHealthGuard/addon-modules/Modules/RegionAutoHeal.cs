@@ -271,25 +271,48 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
 
             try
             {
-                var engine = _scene.RequestModuleInterface<IScriptModule>();
-                if (engine == null)
-                {
-                    Log.Warn("[AUTOHEAL] no script engine, cannot reset scripts.");
-                    return;
-                }
-
+                // Get the active script module (YEngine implements IScriptModule)
+                var scriptModule = _scene.RequestModuleInterface<IScriptModule>();
                 int count = 0;
+
+                // Try to find a ResetScript(UUID) method via reflection on the concrete engine
+                // This keeps us compatible if the engine exposes IScriptEngine.ResetScript(UUID)
+                // without adding a hard compile-time dependency.
+                var engineObj = scriptModule as object;
+                var resetMethod = engineObj?.GetType().GetMethod("ResetScript", new[] { typeof(UUID) });
+
                 foreach (var part in sog.Parts)
                 {
-                    try
+                    var items = part.Inventory?.GetInventoryItems();
+                    if (items == null) continue;
+
+                    foreach (var inv in items)
                     {
-                        // @todo: ResetScript????
-                        engine.ResetScript(part.UUID, UUID.Zero); // best-effort API call
-                        count++;
+                        if (inv == null) continue;
+
+                        // Only reset script items (source or bytecode)
+                        if (inv.Type == (int)OpenMetaverse.AssetType.LSLText || inv.Type == (int)OpenMetaverse.AssetType.LSLBytecode)
+                        {
+                            if (resetMethod != null)
+                            {
+                                // Call ResetScript(UUID) if the engine provides it
+                                resetMethod.Invoke(engineObj, new object[] { inv.ItemID });
+                                count++;
+                            }
+                            else
+                            {
+                                // No hard reset available; as a fallback you could Suspend/Resume here if
+                                scriptModule.SuspendScript(inv.ItemID);
+                                scriptModule.ResumeScript(inv.ItemID);
+                            }
+                        }
                     }
-                    catch { }
                 }
-                Log.Warn($"[AUTOHEAL] reset scripts of '{sog.Name}' parts={count} reason={reason}");
+
+                if (resetMethod != null)
+                    Log.Warn($"[AUTOHEAL] reset scripts via engine ResetScript(UUID) for '{sog.Name}' items={count} reason={reason}");
+                else
+                    Log.Warn($"[AUTOHEAL] engine has no ResetScript(UUID); performed no hard resets on '{sog.Name}'.");
             }
             catch (Exception ex)
             {
@@ -328,6 +351,7 @@ namespace OpenSimRegionWarmupHealthGuard.Modules
                         }
                         else
                         {
+                            // @todo: implement throttle here
                             // Best-effort: disable constant updates we control (e.g., temporary turning off dynamics/particles where sensible)
                             foreach (var p in parts)
                             {
